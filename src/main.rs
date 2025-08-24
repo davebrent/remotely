@@ -273,10 +273,10 @@ fn error_state(
 fn worker(
     config: &Config,
     server: &mut Server,
-    mut stream: TcpStream,
+    stream: &mut TcpStream,
 ) -> Result<()> {
     // Parse the http request
-    let mut buf_reader = BufReader::new(&stream);
+    let mut buf_reader = BufReader::new(&mut *stream);
     let buf = buf_reader.fill_buf()?;
     let mut headers = [EMPTY_HEADER; 64];
     let mut request = Request::new(&mut headers);
@@ -313,13 +313,13 @@ fn worker(
                 };
             }
             State::Connected(conn, path) => {
-                state = match connected_state(config, conn, path, &mut stream) {
+                state = match connected_state(config, conn, path, stream) {
                     Ok(state) => state,
                     Err(err) => State::Error(200, err.to_string()),
                 };
             }
             State::Error(code, reason) => {
-                state = error_state(code, &reason, &mut stream)?;
+                state = error_state(code, &reason, stream)?;
             }
             State::Done => {
                 break;
@@ -328,6 +328,13 @@ fn worker(
     }
 
     Ok(())
+}
+
+fn handle_stream(config: &Config, server: &mut Server, mut stream: TcpStream) {
+    if let Err(err) = worker(config, server, &mut stream) {
+        let resp = make_html_response(500, &err.to_string());
+        stream.write_all(resp.as_bytes()).ok();
+    }
 }
 
 fn config_from_args() -> Result<Config> {
@@ -405,7 +412,14 @@ fn remotely_start() -> Result<()> {
     );
 
     for stream in listener.incoming() {
-        worker(&config, &mut server, stream?)?;
+        let stream = match stream {
+            Ok(stream) => stream,
+            Err(err) => {
+                eprintln!("Failed to recieve stream: {err}");
+                continue;
+            }
+        };
+        handle_stream(&config, &mut server, stream);
     }
 
     Ok(())
