@@ -413,6 +413,6 @@ fn remotely_start() -> Result<()> {
 
 fn main() {
     if let Err(err) = remotely_start() {
-        eprintln!("{}", err.to_string());
+        eprintln!("{err}");
     }
 }
