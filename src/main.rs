@@ -338,12 +338,12 @@ fn config_from_args() -> Result<Config> {
     let mut host = "127.0.0.1".into();
     let mut port = "8000".into();
     let mut target = String::new();
+    let mut help = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--help" => {
-                print!("{USAGE}");
-                process::exit(0);
+                help = true;
             }
             "-h" | "--host" => {
                 if let Some(h) = args.next() {
@@ -363,13 +363,25 @@ fn config_from_args() -> Result<Config> {
         }
     }
 
-    if target.is_empty() {
+    if help {
         print!("{USAGE}");
         process::exit(0);
     }
 
-    let (remote_user, rest) = target.split_once('@').unwrap();
-    let (remote_host, remote_dir) = rest.split_once(':').unwrap();
+    if target.is_empty() {
+        return Err("missing target".into());
+    }
+
+    let malformed_target_error = "malformed target";
+    let (remote_user, rest) = match target.split_once('@') {
+        Some(pair) => pair,
+        None => return Err(malformed_target_error.into()),
+    };
+
+    let (remote_host, remote_dir) = match rest.split_once(':') {
+        Some(pair) => pair,
+        None => return Err(malformed_target_error.into()),
+    };
 
     Ok(Config {
         local_host: host,
@@ -380,19 +392,27 @@ fn config_from_args() -> Result<Config> {
     })
 }
 
-fn main() -> Result<()> {
+fn remotely_start() -> Result<()> {
     let config = config_from_args()?;
     let mut server = Server { conn: None };
-    let listener = TcpListener::bind(format!(
-        "{}:{}",
-        config.local_host, config.local_port
-    ))?;
+
+    let local_addr = format!("{}:{}", config.local_host, config.local_port);
+    let listener = TcpListener::bind(local_addr)?;
+
     println!(
         "Serving HTTP on {} port {}",
         config.local_host, config.local_port
     );
+
     for stream in listener.incoming() {
         worker(&config, &mut server, stream?)?;
     }
+
     Ok(())
+}
+
+fn main() {
+    if let Err(err) = remotely_start() {
+        eprintln!("{}", err.to_string());
+    }
 }
