@@ -338,29 +338,37 @@ fn handle_stream(config: &Config, server: &mut Server, mut stream: TcpStream) {
 }
 
 fn config_from_args() -> Result<Config> {
-    let mut args = env::args();
+    let mut raw_args = env::args();
 
-    args.next(); // skip program name
+    raw_args.next(); // skip program name
+
+    // Expand "--opt=val" into ["--opt", "val"]
+    let mut args: Vec<String> = Vec::new();
+    for arg in raw_args {
+        if let Some((flag, val)) = arg.split_once('=') {
+            args.push(flag.to_string());
+            args.push(val.to_string());
+        } else {
+            args.push(arg);
+        }
+    }
 
     let mut host = "127.0.0.1".into();
     let mut port = "8000".into();
     let mut target = String::new();
     let mut help = false;
 
-    while let Some(arg) = args.next() {
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--help" => {
                 help = true;
             }
             "-h" | "--host" => {
-                if let Some(h) = args.next() {
-                    host = h;
-                }
+                host = iter.next().ok_or("missing host value")?;
             }
             "-p" | "--port" => {
-                if let Some(p) = args.next() {
-                    port = p.parse()?;
-                }
+                port = iter.next().ok_or("missing port value")?.parse()?;
             }
             _ => {
                 if target.is_empty() {
